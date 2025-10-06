@@ -1,0 +1,274 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>AI Forecast Dashboard</title>
+  <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+  <style>
+    :root {
+      --bg: #f7f9fb;
+      --card: #ffffff;
+      --accent: #0066ff;
+      --text: #222;
+      --shadow: rgba(0, 0, 0, 0.1);
+    }
+
+    body {
+      font-family: "Segoe UI", Roboto, Arial, sans-serif;
+      background-color: var(--bg);
+      color: var(--text);
+      margin: 0;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    header {
+      width: 100%;
+      background: var(--accent);
+      color: white;
+      padding: 18px 0;
+      text-align: center;
+      font-size: 1.6em;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+      box-shadow: 0 3px 8px var(--shadow);
+    }
+
+    #controls {
+      margin: 20px;
+      padding: 15px 25px;
+      background: var(--card);
+      border-radius: 12px;
+      box-shadow: 0 4px 10px var(--shadow);
+      display: flex;
+      gap: 20px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    #controls label {
+      font-weight: 500;
+      margin-right: 6px;
+    }
+
+    select, input, button {
+      padding: 8px 12px;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      font-size: 0.95em;
+      transition: all 0.2s ease-in-out;
+    }
+
+    select:focus, input:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px rgba(0,102,255,0.2);
+    }
+
+    button {
+      background: var(--accent);
+      color: white;
+      font-weight: 600;
+      border: none;
+      cursor: pointer;
+    }
+
+    button:hover {
+      background: #0052cc;
+    }
+
+    #chart-container {
+      width: 90%;
+      max-width: 1200px;
+      background: var(--card);
+      box-shadow: 0 6px 20px var(--shadow);
+      border-radius: 14px;
+      padding: 20px;
+      margin-bottom: 40px;
+      transition: 0.3s ease;
+    }
+
+    #chart {
+      width: 100%;
+      height: 650px;
+    }
+
+    footer {
+      color: #777;
+      font-size: 0.9em;
+      margin-bottom: 20px;
+    }
+  </style>
+</head>
+
+<body>
+  <header>📈 AI Forecast Dashboard</header>
+
+  <div id="controls">
+    <label>Symbol:</label>
+    <input id="symbol" value="BTC-USD" style="width:120px" />
+
+    <label>Model:</label>
+    <select id="model">
+      <option value="ARIMA">ARIMA</option>
+      <option value="LSTM">LSTM</option>
+      <option value="MA">Moving Average</option>
+      <option value="ENSEMBLE">Ensemble (ARIMA + LSTM)</option>
+    </select>
+
+    <label>Horizon:</label>
+    <select id="horizon">
+      <option value="1h">1 Hour</option>
+      <option value="3h">3 Hours</option>
+      <option value="24h">24 Hours</option>
+      <option value="72h">72 Hours</option>
+    </select>
+
+    <button id="refresh">🔄 Refresh</button>
+  </div>
+
+  <div id="chart-container">
+    <div id="chart"></div>
+  </div>
+
+  <footer>© 2025 Forecasting Dashboard | Powered by Flask + Plotly + AI Models</footer>
+
+  <script>
+    async function fetchCandles(minutes = 1440) {
+      const res = await fetch(`/api/candles?minutes=${minutes}`);
+      return res.json();
+    }
+
+    async function fetchPredictions(model, horizon, symbol) {
+      const res = await fetch(`/api/predictions?model=${model}&horizon=${horizon}&symbol=${symbol}`);
+      return res.json();
+    }
+
+    function draw(candles, preds, model) {
+    const data = [];
+    let dates;
+    let closes;
+
+    // Main trace: historical data if available, otherwise MongoDB candles
+    if (preds && preds.historical_data?.length > 0) {
+        const first_record = preds.historical_data[0];
+        dates = preds.historical_data.map(p => new Date(p.timestamp));
+        closes = preds.historical_data.map(p => p.close);
+
+        if (first_record.open !== undefined && first_record.high !== undefined && first_record.low !== undefined) {
+            // Candlestick for historical data
+            data.push({
+                x: dates,
+                open: preds.historical_data.map(p => p.open),
+                high: preds.historical_data.map(p => p.high),
+                low: preds.historical_data.map(p => p.low),
+                close: closes,
+                increasing: { line: { color: '#17BECF' } },
+                decreasing: { line: { color: '#7F7F7F' } },
+                type: 'candlestick',
+                name: 'Historical Data'
+            });
+        } else {
+            // Line chart for historical data
+            data.push({
+                x: dates,
+                y: closes,
+                mode: 'lines',
+                name: `Historical Data`,
+                line: { dash: 'solid', width: 2, color: '#ff7f0e' }
+            });
+        }
+    } else if (candles && candles.length > 0) {
+        // Default to MongoDB candles if no historical data
+        dates = candles.map(r => new Date(r.timestamp));
+        const opens = candles.map(r => r.open);
+        const highs = candles.map(r => r.high);
+        const lows = candles.map(r => r.low);
+        closes = candles.map(r => r.close);
+
+        data.push({
+          x: dates,
+          open: opens, high: highs, low: lows, close: closes,
+          increasing: { line: { color: '#17BECF' } },
+          decreasing: { line: { color: '#7F7F7F' } },
+          type: 'candlestick',
+          name: 'Live Data'
+        });
+    }
+
+    const layout = {
+        title: `${model} Forecast for ${document.getElementById('symbol').value}`,
+        xaxis: { rangeslider: { visible: false }, title: "Time" },
+        yaxis: { title: "Price", autorange: true },
+        paper_bgcolor: '#ffffff',
+        plot_bgcolor: '#ffffff'
+    };
+
+    // Add predictions and baseline predictions
+    if (preds && dates && closes) {
+        if (preds.predictions?.length > 0) {
+            const xPred = preds.predictions.map(p => new Date(p.timestamp));
+            const yPred = preds.predictions.map(p => p.predicted_close);
+
+            data.push({
+                x: [dates[dates.length - 1], xPred[0]],
+                y: [closes[closes.length - 1], yPred[0]],
+                mode: 'lines',
+                line: { dash: 'dot', width: 2, color: '#d62728' },
+                showlegend: false
+            });
+
+            data.push({
+                x: xPred,
+                y: yPred,
+                mode: 'lines+markers',
+                name: `${preds.model} Prediction`,
+                line: { dash: 'solid', width: 2, color: '#d62728' },
+                marker: { size: 5, color: '#d62728' }
+            });
+        }
+
+        if (preds.baseline_predictions?.length > 0) {
+            const xBaseline = preds.baseline_predictions.map(p => new Date(p.timestamp));
+            const yBaseline = preds.baseline_predictions.map(p => p.predicted_close);
+
+            data.push({
+                x: [dates[dates.length - 1], xBaseline[0]],
+                y: [closes[closes.length - 1], yBaseline[0]],
+                mode: 'lines',
+                line: { dash: 'dot', width: 2, color: '#2ca02c' },
+                showlegend: false
+            });
+
+            data.push({
+                x: xBaseline,
+                y: yBaseline,
+                mode: 'lines+markers',
+                name: `Baseline Prediction`,
+                line: { dash: 'solid', width: 2, color: '#2ca02c' },
+                marker: { size: 5, color: '#2ca02c' }
+            });
+        }
+    }
+
+    Plotly.newPlot('chart', data, layout, {responsive: true});
+}
+
+    async function refresh() {
+      const model = document.getElementById('model').value;
+      const horizon = document.getElementById('horizon').value;
+      const symbol = document.getElementById('symbol').value;
+
+      const candles = await fetchCandles(48 * 60);
+      const preds = await fetchPredictions(model, horizon, symbol);
+
+      draw(candles, preds, model);
+    }
+
+    document.getElementById('refresh').addEventListener('click', refresh);
+    refresh();
+  </script>
+</body>
+</html>
