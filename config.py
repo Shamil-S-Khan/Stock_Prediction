@@ -22,7 +22,7 @@ RETRAIN_TIMESTAMP_FILE = os.path.join(DATA_DIR, '.retrain_timestamp')
 
 # --- API Keys & Secrets ---
 # It's recommended to use environment variables for sensitive data
-MONGO_URI = os.getenv("MONGO_URI", "mongodb+srv://i222451:i222451@cluster0.z2egq.mongodb.net/")
+MONGO_URI = os.getenv("MONGO_URI","")
 DB_NAME = "forecast"
 PRED_COLLECTION = "predictions"
 
