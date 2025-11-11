@@ -2,7 +2,7 @@
 
 A comprehensive machine learning system for cryptocurrency price prediction, automated portfolio management, and real-time performance monitoring. Built with Flask, LSTM, and ARIMA models.
 
-## 🌟 Features
+## Features
 
 ### Forecasting Models
 - **LSTM (Long Short-Term Memory)**: Deep learning model for capturing long-term dependencies
@@ -27,13 +27,13 @@ A comprehensive machine learning system for cryptocurrency price prediction, aut
 - Performance evaluation and monitoring
 - Intelligent retraining triggers
 
-## 📋 Prerequisites
+## Prerequisites
 
 - Python 3.8 or higher
 - pip package manager
 - Virtual environment (recommended)
 
-## 🚀 Installation
+## Installation
 
 1. **Clone the repository**
    ```bash
@@ -64,7 +64,7 @@ A comprehensive machine learning system for cryptocurrency price prediction, aut
      - Model parameters
      - Metric thresholds for retraining
 
-## 💻 Usage
+## Usage
 
 ### Running the Web Application
 
@@ -109,7 +109,7 @@ Evaluate model performance:
 python evaluation.py
 ```
 
-## 📊 Project Structure
+## Project Structure
 
 ```
 finance_forecasting/
@@ -147,7 +147,7 @@ finance_forecasting/
     └── test_app.py
 ```
 
-## ⚙️ Configuration
+## Configuration
 
 Key configuration options in `config.py`:
 
@@ -169,7 +169,7 @@ RMSE_THRESHOLD = 600.0
 EVALUATION_LOOKBACK_DAYS = 30
 ```
 
-## 📈 API Endpoints
+## API Endpoints
 
 ### Predictions
 - `GET /api/predict/<symbol>` - Get predictions for all horizons
@@ -185,7 +185,7 @@ EVALUATION_LOOKBACK_DAYS = 30
 - `GET /api/dashboard/performance_comparison` - Model comparison data
 - `GET /api/dashboard/recent_predictions` - Latest predictions
 
-## 🧪 Testing
+## Testing
 
 Run the test suite:
 ```bash
@@ -197,7 +197,7 @@ Run specific tests:
 python -m pytest test/test_app.py -v
 ```
 
-## 📊 Model Performance
+## Model Performance
 
 Models are evaluated using:
 - **MAE (Mean Absolute Error)**: Average magnitude of errors
@@ -206,7 +206,7 @@ Models are evaluated using:
 
 Automatic retraining is triggered when any metric exceeds its threshold.
 
-## 🔄 Automated Workflows
+## Automated Workflows
 
 The system includes automated jobs:
 1. **Data Fetching**: Hourly cryptocurrency price updates
@@ -215,7 +215,7 @@ The system includes automated jobs:
 4. **Performance Monitoring**: Continuous metric evaluation
 5. **Model Retraining**: Triggered when performance degrades
 
-## 🛠️ Technologies Used
+## Technologies Used
 
 - **Backend**: Flask, Python 3.8+
 - **ML/AI**: TensorFlow/Keras (LSTM), statsmodels (ARIMA), scikit-learn
@@ -223,7 +223,7 @@ The system includes automated jobs:
 - **Frontend**: HTML5, CSS3, JavaScript, Plotly.js
 - **Storage**: CSV files, JSON
 
-## 📝 Data Flow
+## Data Flow
 
 1. **Data Collection**: Fetch cryptocurrency prices via yfinance
 2. **Preprocessing**: Clean and format data for models
@@ -232,7 +232,7 @@ The system includes automated jobs:
 5. **Evaluation**: Calculate metrics by comparing predictions to actual values
 6. **Monitoring**: Track performance and trigger retraining if needed
 
-## 🔍 Troubleshooting
+## Troubleshooting
 
 ### Models not loading
 - Ensure models are trained: Run `python model/arima_model.py` and `python model/lstm_model.py`
@@ -251,7 +251,7 @@ The system includes automated jobs:
 - Run terminal as Administrator
 - Check file permissions in data/ and models/ directories
 
-## 🤝 Contributing
+## Contributing
 
 Contributions are welcome! Please:
 1. Fork the repository
@@ -260,38 +260,12 @@ Contributions are welcome! Please:
 4. Push to the branch (`git push origin feature/AmazingFeature`)
 5. Open a Pull Request
 
-## 📄 License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## 👥 Authors
-
-- Your Name - Initial work
-
-## 🙏 Acknowledgments
+## Acknowledgments
 
 - yfinance for cryptocurrency data
 - TensorFlow/Keras for deep learning framework
 - statsmodels for statistical modeling
 - Flask for web framework
 - Plotly for interactive charts
-
-## 📞 Support
-
-For issues and questions:
-- Open an issue on GitHub
-- Contact: your.email@example.com
-
-## 🗺️ Roadmap
-
-- [ ] Add support for multiple cryptocurrencies
-- [ ] Implement additional ML models (Prophet, XGBoost)
-- [ ] Real-time WebSocket updates
-- [ ] Mobile app integration
-- [ ] Advanced backtesting features
-- [ ] Risk management tools
-- [ ] Export reports (PDF/Excel)
-
----
-
-**Note**: This system is for educational and research purposes. Cryptocurrency trading involves risk. Always do your own research and never invest more than you can afford to lose.
