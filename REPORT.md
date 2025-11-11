@@ -6,37 +6,6 @@ This report documents the extended system with adaptive learning, continuous eva
 
 High-level diagrams are maintained in `docs/architecture.md`. For convenience the main component view is reproduced here:
 
-```mermaid
-flowchart LR
-  subgraph Client
-    UI[Browser UI\nPlotly Candlestick + Lines + Dashboard]
-  end
-
-  subgraph Server[Flask + APScheduler]
-    A1[/GET /api/candles]
-    A2[/GET /api/predictions]
-    A3[/GET /api/portfolio_performance]
-    A4[/GET /api/metrics]
-    Jobs[(scheduled jobs)]
-  end
-
-  subgraph Storage[Data & Models]
-    CSV[(crypto_data.csv\npredictions.csv\nmetrics.csv)]
-    MODELS[(models/\nARIMA .pkl, LSTM .h5)]
-    META[(models/metadata.json)]
-  end
-
-  UI <-- JSON --> A1
-  UI <-- JSON --> A2
-  UI <-- JSON --> A3
-  UI <-- JSON --> A4
-  A2 --> MODELS
-  A2 --> CSV
-  Jobs --> CSV
-  Jobs --> MODELS
-  MODELS --> META
-```
-
 See `docs/architecture.md` for a full sequence diagram covering ingestion → prediction logging → actuals update → evaluation → retraining and versioning.
 
 For detailed data file (CSV) descriptions and schemas, see `docs/data_dictionary.md`.
