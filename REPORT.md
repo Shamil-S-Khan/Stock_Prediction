@@ -1,141 +1,137 @@
-## Finance Forecasting Web App – Short Report
+## Finance Forecasting System — Short Report (Extended)
 
-### 1. Architecture
+This report documents the extended system with adaptive learning, continuous evaluation, portfolio management, and visualization. It targets a 3–5 page scope.
+
+### 1) Architecture and Data Flow
+
+High-level diagrams are maintained in `docs/architecture.md`. For convenience the main component view is reproduced here:
 
 ```mermaid
 flowchart LR
   subgraph Client
-    UI[Browser UI\nPlotly Candlestick + Lines]
+    UI[Browser UI\nPlotly Candlestick + Lines + Dashboard]
   end
 
-  subgraph Server[Flask App]
-    A1[/GET /api/candles/]
-    A2[/GET /api/predictions/]
-    Tmpl[Templates\nindex.html]
+  subgraph Server[Flask + APScheduler]
+    A1[/GET /api/candles]
+    A2[/GET /api/predictions]
+    A3[/GET /api/portfolio_performance]
+    A4[/GET /api/metrics]
+    Jobs[(scheduled jobs)]
   end
 
-  subgraph Data
-    M[(MongoDB Atlas\ncollections: candlestick_data, predictions)]
-    CSV[(arima_hourly.csv\nlatest historical OHLC)]
+  subgraph Storage[Data & Models]
+    CSV[(crypto_data.csv\npredictions.csv\nmetrics.csv)]
+    MODELS[(models/\nARIMA .pkl, LSTM .h5)]
+    META[(models/metadata.json)]
   end
 
-  UI <-- JSON (candles) --> A1
-  UI <-- JSON (predictions) --> A2
-  UI --> Tmpl
-  A1 --> M
-  A2 --> M
+  UI <-- JSON --> A1
+  UI <-- JSON --> A2
+  UI <-- JSON --> A3
+  UI <-- JSON --> A4
+  A2 --> MODELS
   A2 --> CSV
+  Jobs --> CSV
+  Jobs --> MODELS
+  MODELS --> META
 ```
 
-- The frontend renders a candlestick chart for historical OHLC and overlays forecast lines.
-- The backend exposes REST endpoints:
-  - `/api/candles?minutes=N` to fetch recent 5‑minute candles from MongoDB.
-  - `/api/predictions?model=ARIMA|LSTM|MA&horizon=1h|3h|24h|72h&symbol=BTC-USD` to fetch model forecasts and (for ARIMA) a moving‑average baseline plus recent history window. All timestamps are normalized to UTC ISO.
+See `docs/architecture.md` for a full sequence diagram covering ingestion → prediction logging → actuals update → evaluation → retraining and versioning.
 
-### 2. Forecasting Models Implemented
+For detailed data file (CSV) descriptions and schemas, see `docs/data_dictionary.md`.
 
-- Traditional: ARIMA
-  - Trained offline; predictions are stored in MongoDB (`predictions` collection) with fields: `timestamp` (UTC), `predicted_close`, `model`, `symbol`.
-  - API returns strictly future predictions relative to the last CSV timestamp.
+---
 
-- Neural: LSTM
-  - Trained offline; predictions written to the same `predictions` collection.
-  - API mirrors behavior of ARIMA for fetching, filtering, and formatting.
+### 2) Adaptive/Continuous Learning Mechanism
 
-- Baseline: Moving Average (MA)
-  - Computed on the fly from `arima_hourly.csv` using a rolling window (default 3).
-  - Produces a flat forecast equal to the last rolling mean for the requested horizon steps.
+- Hourly ingestion: `data_fetcher.scheduled_job()` fetches the most recent completed 1h bar (UTC) and appends it to `crypto_data.csv`. It simultaneously calls `evaluation.update_with_actual()` so past predictions are filled with actuals when the time passes.
+- Retraining trigger: A persistent counter in `data/.new_rows_count` is incremented per new row. When `>= RETRAIN_THRESHOLD` (configurable in `config.py`), `trigger_retraining()` runs `model/arima_model.py` and `model/lstm_model.py`.
+- Versioning: Each trainer calls `model_manager.save_model_version()` which writes model artifacts under `models/<type>/` and appends a metadata entry into `models/metadata.json` including timestamp, hyperparameters, initial metrics, and data range.
+- Serving latest: `/api/predictions` resolves the most recent version via `model_manager.load_latest_model(type)` and generates the next N hours of forecasts based on the current history window.
+- Post-prediction logging: Every forecast is recorded into `data/predictions.csv` with columns `[timestamp, symbol, horizon, model_type, predicted_price, actual_price, error]`.
 
-- Ensemble (ARIMA + LSTM)
-  - Simple average of aligned ARIMA and LSTM predictions for the horizon.
+Edge handling: All timestamps are coerced to timezone-aware UTC; missing/invalid rows are dropped; Docker/Windows path differences are handled by rebuilding relative model paths when needed.
 
-Key implementation points:
-- Time handling uses a helper to ensure all timestamps are UTC tz-aware.
-- The API ensures predictions are future-only relative to the last historical time to avoid diagonal connectors in plots.
+---
 
-### 3. Performance Comparison
+### 3) Evaluation and Monitoring Approach
 
-Methodology:
-- Split: Use historical data up to a cutoff for training, reserve subsequent hours/days for testing.
-- Metrics: RMSE and MAPE on the test set for each model.
-- Alignment: Compare predictions at identical timestamps; drop any missing points.
+- Actuals completion: `update_actuals.py` runs hourly (and `populate_actuals.py` is available for manual bulk fills). It first tries `crypto_data.csv`, and if absent/unmatched, optionally falls back to yfinance to backfill. The script computes `error = predicted_price - actual_price`.
+- Rolling metrics: `evaluation.calculate_metrics()` filters the last K days (default 30) for a given `(model_type, horizon, symbol)` where `actual_price` exists, then computes MAE, RMSE, and MAPE. `run_evaluation()` iterates across models and horizons and appends snapshots to `data/metrics.csv`.
+- Visualization: `/dashboard` renders a monitoring page that:
+  - charts metric histories per model/horizon,
+  - compares current vs previous week metrics,
+  - lists model versions (from `metadata.json`),
+  - flags alerts (e.g., MAPE > 10%) via a red indicator.
+- API endpoints:
+  - `/api/metrics?model=arima&horizon=24h&symbol=BTC-USD&lookback=30`
+  - `/api/metric_history?model=arima&horizon=24h&metric=mape&days=30`
+  - `/api/dashboard/*` helpers used by the dashboard page.
 
-Example results (illustrative — replace with your measured values):
+---
 
-| Model   | Horizon | RMSE  | MAPE  |
-|---------|---------|-------|-------|
-| MA      | 1h      | 520   | 0.82% |
-| ARIMA   | 1h      | 410   | 0.64% |
-| LSTM    | 1h      | 395   | 0.62% |
-| Ensemble| 1h      | 380   | 0.59% |
+### 4) Portfolio Management Strategy and Visualization
 
-Notes:
-- On shorter horizons, ARIMA and LSTM typically outperform MA; the simple ensemble may offer modest gains if errors are partially uncorrelated.
-- Recompute metrics periodically as market dynamics shift.
+- Strategy: `portfolio.run_live_trading_strategy()` evaluates the most recent 24h prediction for `BTC-USD` and compares it to the live/last price:
+  - If predicted change > +2% → buy 10% of cash balance;
+  - If predicted change < −2% → sell 25% of current holdings;
+  - Else → hold.
+- State & accounting:
+  - State: `data/portfolio_state.json` (cash, holdings)
+  - Transactions: `data/transactions.csv` (timestamped buys/sells)
+  - Historical value: `data/portfolio_history.csv` (for legacy) and `data/portfolio_historical_values.csv` (new value snapshots)
+- Performance metrics: `Portfolio.get_performance_metrics()` computes total return, annualized return, annualized volatility, Sharpe ratio (2% RF), and max drawdown from historical portfolio values.
+- Visualization on `/` (index):
+  - price candlestick with prediction traces, shaded error overlays, and trade markers (green triangles for buys, red triangles for sells),
+  - portfolio value over time line chart,
+  - holdings pie chart,
+  - live metrics widget (Sharpe, volatility, drawdown, etc.).
 
-How to reproduce metrics quickly:
-1) Export a contiguous test window from MongoDB to CSV.
-2) Query `/api/predictions` for each model and horizon.
-3) Join by timestamp and compute RMSE / MAPE in a notebook or script.
+---
 
-### 4. Screenshots of the Web Interface
+### 5) Screenshots or Sample Runs
 
-Include the following screenshots in your submission (paste images below or as separate files referenced here):
-- Candlestick chart with ARIMA prediction (1h horizon)
-- Candlestick chart with LSTM prediction (3h horizon)
-- Candlestick chart with Ensemble prediction (24h horizon)
-- Candlestick with MA baseline for comparison
+You can capture screenshots of the required visuals directly from the running app.
 
-You can capture these by running the app and taking screenshots of the chart after selecting different models/horizons.
+Required shots (paste below or submit as separate files):
+- Candlestick with prediction line and shaded error overlay (index page)
+- Portfolio value growth chart and metrics panel (index page)
+- Monitoring dashboard with metric history and model versions (dashboard page)
 
-Commands (Windows PowerShell):
+How to produce in Windows PowerShell:
 
-```bash
-# Activate your environment
-.\tf-env\Scripts\activate
+```powershell
+# If using Docker (recommended)
+docker-compose up --build -d
+Start-Process http://localhost:5000        # main chart & portfolio
+Start-Process http://localhost:5000/dashboard # monitoring dashboard
 
-# Run the server
-python finance_forecasting\app.py
-
-# Then open the browser at: http://127.0.0.1:5000/
+# Or run locally
+.\tf-env\Scripts\Activate.ps1
+python .\finance_forecasting\app.py
 ```
 
-This report summarizes the application architecture, implemented forecasting approaches, a reproducible comparison method, and the expected visual outputs.
+Tips:
+- On the main chart page, use the legend to toggle traces and double‑click to isolate a trace. Use the camera icon to export a PNG.
+- If actuals are sparse, run: `python finance_forecasting\populate_actuals.py` to fill from `crypto_data.csv`.
+- If yfinance is unstable, the app still renders with cached data and previously recorded predictions/metrics.
 
+---
 
+### 6) Notes on Models
 
-### 5. Dataset summary metrics (sample)
+- ARIMA: Trained on log prices; forecasts are exponentiated for level prices. Served directly via latest saved artifact.
+- LSTM: Sequence length and scaler metadata saved; last `seq_len` steps are used as input to predict a horizon, then inverse-scaled to price space.
+- Both models’ predictions are logged for backtesting and evaluation; the dashboard shows their rolling error behavior.
 
-Below are sample per-day feature metrics from your dataset (UTC):
+---
 
-| Date | open | high | low | close | volume | return | sma_10 | sma_50 | rsi_14 | volatility_14 |
-|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| 2024-11-23 00:00:00+00:00 | 99006.7422 | 99014.6797 | 97232.8906 | 97777.2813 | 0.2010 | -0.0123 | 0.3187 | 0.0000 | 0.8840 | 0.6607 |
-| 2024-11-24 00:00:00+00:00 | 97778.0938 | 98647.1797 | 95788.0781 | 98013.8203 | 0.2435 | 0.0024 | 0.3476 | 0.0170 | 0.8536 | 0.6379 |
-| 2024-11-25 00:00:00+00:00 | 98033.4453 | 98935.0313 | 92642.9141 | 93102.2969 | 0.4133 | -0.0501 | 0.3530 | 0.0313 | 0.5640 | 0.4776 |
-| 2024-11-26 00:00:00+00:00 | 93087.2813 | 94991.7500 | 90770.8125 | 91985.3203 | 0.4759 | -0.0120 | 0.3569 | 0.0454 | 0.5530 | 0.4811 |
-| 2024-11-27 00:00:00+00:00 | 91978.1406 | 97361.1797 | 91778.6641 | 95962.5313 | 0.3565 | 0.0432 | 0.3732 | 0.0614 | 0.5809 | 0.5107 |
-| 2024-11-28 00:00:00+00:00 | 95954.9453 | 96650.2031 | 94677.3516 | 95652.4688 | 0.2467 | -0.0032 | 0.3869 | 0.0779 | 0.6780 | 0.4505 |
-| 2024-11-29 00:00:00+00:00 | 95653.9531 | 98693.1719 | 95407.8828 | 97461.5234 | 0.2624 | 0.0189 | 0.4007 | 0.0955 | 0.6382 | 0.4030 |
-| 2024-11-30 00:00:00+00:00 | 97468.8125 | 97499.3438 | 96144.2188 | 96449.0547 | 0.1267 | -0.0104 | 0.4063 | 0.1116 | 0.6198 | 0.4079 |
+### 7) Appendix (optional quick metrics workflow)
 
-Notes:
-- `return` is the daily log or simple return used as a feature (depending on preprocessing).
-- `sma_10`/`sma_50` are rolling means; `rsi_14` is the 14‑period RSI; `volatility_14` is rolling std or similar.
+To recompute a small comparison locally:
+1. Query `/api/predictions` for ARIMA and LSTM with the same horizon.
+2. Wait for actuals to arrive (or run `populate_actuals.py`).
+3. Use `evaluation.calculate_metrics()` to obtain MAE/RMSE/MAPE for the last N days.
 
-### 6. Aggregate statistics (from lstm_daily.csv)
-
-- File: `lstm_daily.csv`
-- Rows: 316
-- Date range: 2024-11-23 00:00:00+00:00 → 2025-10-04 00:00:00+00:00
-
-- Close price:
-  - mean: 101940.9281, median: 102891.9023, std: 11144.4350
-- Return:
-  - mean: 0.000914, median: 0.000234, std: 0.022137
-- RSI(14):
-  - mean: 0.50, median: 0.48, IQR: 0.35–0.64
-  - overbought(>70): 0.00%, oversold(<30): 100.00%
-- Volatility(14):
-  - mean: 0.3265, median: 0.2957, p90: 0.6266
-- SMA(10/50) crosses: golden=5, death=6
+For deeper details, see `docs/architecture.md`.

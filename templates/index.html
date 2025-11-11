@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>AI Forecast Dashboard</title>
+  <title>AI Forecast & Portfolio Dashboard</title>
   <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
   <style>
     :root {
@@ -11,8 +11,9 @@
       --accent: #0066ff;
       --text: #222;
       --shadow: rgba(0, 0, 0, 0.1);
+      --green: #2ca02c;
+      --red: #d62728;
     }
-
     body {
       font-family: "Segoe UI", Roboto, Arial, sans-serif;
       background-color: var(--bg);
@@ -23,7 +24,6 @@
       flex-direction: column;
       align-items: center;
     }
-
     header {
       width: 100%;
       background: var(--accent);
@@ -35,7 +35,6 @@
       letter-spacing: 0.5px;
       box-shadow: 0 3px 8px var(--shadow);
     }
-
     #controls {
       margin: 20px;
       padding: 15px 25px;
@@ -47,26 +46,12 @@
       align-items: center;
       flex-wrap: wrap;
     }
-
-    #controls label {
-      font-weight: 500;
-      margin-right: 6px;
-    }
-
     select, input, button {
       padding: 8px 12px;
       border: 1px solid #ccc;
       border-radius: 6px;
       font-size: 0.95em;
-      transition: all 0.2s ease-in-out;
     }
-
-    select:focus, input:focus {
-      outline: none;
-      border-color: var(--accent);
-      box-shadow: 0 0 0 2px rgba(0,102,255,0.2);
-    }
-
     button {
       background: var(--accent);
       color: white;
@@ -74,50 +59,59 @@
       border: none;
       cursor: pointer;
     }
-
-    button:hover {
-      background: #0052cc;
-    }
-
-    #chart-container {
+    .chart-container {
       width: 90%;
       max-width: 1200px;
       background: var(--card);
       box-shadow: 0 6px 20px var(--shadow);
       border-radius: 14px;
       padding: 20px;
-      margin-bottom: 40px;
-      transition: 0.3s ease;
-    }
-
-    #chart {
-      width: 100%;
-      height: 650px;
-    }
-
-    footer {
-      color: #777;
-      font-size: 0.9em;
       margin-bottom: 20px;
     }
+    .chart {
+      width: 100%;
+      height: 600px;
+    }
+    #portfolio-section {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 20px;
+        width: 90%;
+        max-width: 1200px;
+    }
+    #portfolio-left {
+        flex: 2;
+        min-width: 300px;
+    }
+    #portfolio-right {
+        flex: 1;
+        min-width: 300px;
+    }
+    #metrics-dashboard {
+        background: var(--card);
+        box-shadow: 0 6px 20px var(--shadow);
+        border-radius: 14px;
+        padding: 20px;
+        margin-bottom: 20px;
+    }
+    .metric { margin-bottom: 10px; font-size: 1.1em; }
+    .metric-label { font-weight: 600; }
+    .metric-value.positive { color: var(--green); }
+    .metric-value.negative { color: var(--red); }
   </style>
 </head>
 
 <body>
-  <header>📈 AI Forecast Dashboard</header>
+  <header>📈 AI Forecast & Portfolio Dashboard</header>
 
   <div id="controls">
     <label>Symbol:</label>
     <input id="symbol" value="BTC-USD" style="width:120px" />
-
     <label>Model:</label>
     <select id="model">
       <option value="ARIMA">ARIMA</option>
       <option value="LSTM">LSTM</option>
-      <option value="MA">Moving Average</option>
-      <option value="ENSEMBLE">Ensemble (ARIMA + LSTM)</option>
     </select>
-
     <label>Horizon:</label>
     <select id="horizon">
       <option value="1h">1 Hour</option>
@@ -125,96 +119,147 @@
       <option value="24h">24 Hours</option>
       <option value="72h">72 Hours</option>
     </select>
-
     <button id="refresh">🔄 Refresh</button>
   </div>
-
-  <div id="chart-container">
-    <div id="chart"></div>
+  
+  <div style="text-align: center; margin: 10px 0; font-size: 0.9em; color: #666;">
+    💡 <strong>Tip:</strong> Click on legend items to show/hide traces • Double-click to isolate a single trace
   </div>
 
-  <footer>© 2025 Forecasting Dashboard | Powered by Flask + Plotly + AI Models</footer>
+  <div class="chart-container">
+    <div id="price-chart" class="chart"></div>
+  </div>
+
+  <div id="portfolio-section">
+      <div id="portfolio-left">
+          <div class="chart-container">
+              <div id="portfolio-value-chart" class="chart" style="height: 400px;"></div>
+          </div>
+          <div id="metrics-dashboard">
+              <h3>Performance Metrics</h3>
+              <div class="metric"><span class="metric-label">Total Return:</span> <span id="total-return" class="metric-value"></span></div>
+              <div class="metric"><span class="metric-label">Annualized Return:</span> <span id="annualized-return" class="metric-value"></span></div>
+              <div class="metric"><span class="metric-label">Annualized Volatility:</span> <span id="annualized-volatility" class="metric-value"></span></div>
+              <div class="metric"><span class="metric-label">Sharpe Ratio:</span> <span id="sharpe-ratio" class="metric-value"></span></div>
+              <div class="metric"><span class="metric-label">Max Drawdown:</span> <span id="max-drawdown" class="metric-value"></span></div>
+          </div>
+      </div>
+      <div id="portfolio-right">
+          <div class="chart-container">
+              <div id="holdings-pie-chart" class="chart" style="height: 400px;"></div>
+          </div>
+      </div>
+  </div>
+
 
   <script>
-    async function fetchCandles(minutes = 1440) {
-      const res = await fetch(`/api/candles?minutes=${minutes}`);
-      return res.json();
-    }
-
     async function fetchPredictions(model, horizon, symbol) {
       const res = await fetch(`/api/predictions?model=${model}&horizon=${horizon}&symbol=${symbol}`);
+      if (!res.ok) { console.error("Failed to fetch predictions"); return null; }
       return res.json();
     }
 
-    function draw(candles, preds, model) {
-    const data = [];
-    let dates;
-    let closes;
-
-    // Main trace: historical data if available, otherwise MongoDB candles
-    if (preds && preds.historical_data?.length > 0) {
-        const first_record = preds.historical_data[0];
-        dates = preds.historical_data.map(p => new Date(p.timestamp));
-        closes = preds.historical_data.map(p => p.close);
-
-        if (first_record.open !== undefined && first_record.high !== undefined && first_record.low !== undefined) {
-            // Candlestick for historical data
-            data.push({
-                x: dates,
-                open: preds.historical_data.map(p => p.open),
-                high: preds.historical_data.map(p => p.high),
-                low: preds.historical_data.map(p => p.low),
-                close: closes,
-                increasing: { line: { color: '#17BECF' } },
-                decreasing: { line: { color: '#7F7F7F' } },
-                type: 'candlestick',
-                name: 'Historical Data'
-            });
-        } else {
-            // Line chart for historical data
-            data.push({
-                x: dates,
-                y: closes,
-                mode: 'lines',
-                name: `Historical Data`,
-                line: { dash: 'solid', width: 2, color: '#ff7f0e' }
-            });
-        }
-    } else if (candles && candles.length > 0) {
-        // Default to MongoDB candles if no historical data
-        dates = candles.map(r => new Date(r.timestamp));
-        const opens = candles.map(r => r.open);
-        const highs = candles.map(r => r.high);
-        const lows = candles.map(r => r.low);
-        closes = candles.map(r => r.close);
-
-        data.push({
-          x: dates,
-          open: opens, high: highs, low: lows, close: closes,
-          increasing: { line: { color: '#17BECF' } },
-          decreasing: { line: { color: '#7F7F7F' } },
-          type: 'candlestick',
-          name: 'Live Data'
-        });
+    async function fetchPortfolioPerformance() {
+      const res = await fetch(`/api/portfolio_performance`);
+      if (!res.ok) { console.error("Failed to fetch portfolio data"); return null; }
+      return res.json();
     }
 
-    const layout = {
-        title: `${model} Forecast for ${document.getElementById('symbol').value}`,
-        xaxis: { rangeslider: { visible: false }, title: "Time" },
-        yaxis: { title: "Price", autorange: true },
-        paper_bgcolor: '#ffffff',
-        plot_bgcolor: '#ffffff'
-    };
+    function drawPriceChart(preds, transactions) {
+        const data = [];
+        // Historical Price Data
+        if (preds && preds.historical_data?.length > 0) {
+            const first_record = preds.historical_data[0];
+            const dates = preds.historical_data.map(p => new Date(p.timestamp));
+            const closes = preds.historical_data.map(p => p.Close);
 
-    // Add predictions and baseline predictions
-    if (preds && dates && closes) {
-        if (preds.predictions?.length > 0) {
+            if (first_record.Open !== undefined && first_record.High !== undefined && first_record.Low !== undefined) {
+                // Candlestick for historical data
+                data.push({
+                    x: dates,
+                    open: preds.historical_data.map(p => p.Open),
+                    high: preds.historical_data.map(p => p.High),
+                    low: preds.historical_data.map(p => p.Low),
+                    close: closes,
+                    increasing: { line: { color: '#17BECF' } },
+                    decreasing: { line: { color: '#7F7F7F' } },
+                    type: 'candlestick',
+                    name: 'Historical Data'
+                });
+            } else {
+                // Line chart for historical data if OHLC not available
+                data.push({
+                    x: dates,
+                    y: closes,
+                    mode: 'lines',
+                    name: `Historical Price`,
+                    line: { width: 2, color: '#ff7f0e' }
+                });
+            }
+        }
+
+        // Past Predictions with actual prices (for error visualization)
+        if (preds && preds.past_predictions?.length > 0) {
+            // Filter past predictions that have actual prices
+            const withActuals = preds.past_predictions.filter(p => p.actual_price != null);
+            
+            if (withActuals.length > 0) {
+                // Past predictions line
+                data.push({
+                    x: preds.past_predictions.map(p => new Date(p.timestamp)),
+                    y: preds.past_predictions.map(p => p.predicted_price),
+                    mode: 'lines',
+                    name: 'Past Predictions',
+                    line: { dash: 'dash', width: 2, color: '#17BECF' } // Light blue, dashed
+                });
+                
+                // Error visualization - shaded area showing prediction error
+                const errorUpper = withActuals.map(p => p.predicted_price + Math.abs(p.error || 0));
+                const errorLower = withActuals.map(p => p.predicted_price - Math.abs(p.error || 0));
+                const timestamps = withActuals.map(p => new Date(p.timestamp));
+                
+                data.push({
+                    x: timestamps.concat(timestamps.slice().reverse()),
+                    y: errorUpper.concat(errorLower.slice().reverse()),
+                    fill: 'toself',
+                    fillcolor: 'rgba(255, 127, 14, 0.2)',
+                    line: { color: 'transparent' },
+                    name: 'Prediction Error',
+                    showlegend: true,
+                    hoverinfo: 'skip'
+                });
+                
+                // Error markers (predicted vs actual)
+                data.push({
+                    x: withActuals.map(p => new Date(p.timestamp)),
+                    y: withActuals.map(p => p.actual_price),
+                    mode: 'markers',
+                    name: 'Actual Prices',
+                    marker: { color: '#2ca02c', size: 6, symbol: 'circle' }
+                });
+            } else {
+                // No actuals yet, just show past predictions
+                data.push({
+                    x: preds.past_predictions.map(p => new Date(p.timestamp)),
+                    y: preds.past_predictions.map(p => p.predicted_price),
+                    mode: 'lines',
+                    name: 'Past Predictions',
+                    line: { dash: 'dash', width: 2, color: '#17BECF' }
+                });
+            }
+        }
+
+        // Predictions
+        if (preds && preds.predictions?.length > 0) {
+            const historical_dates = preds.historical_data.map(p => new Date(p.timestamp));
+            const historical_closes = preds.historical_data.map(p => p.Close);
             const xPred = preds.predictions.map(p => new Date(p.timestamp));
             const yPred = preds.predictions.map(p => p.predicted_close);
 
+            // Add the connecting line
             data.push({
-                x: [dates[dates.length - 1], xPred[0]],
-                y: [closes[closes.length - 1], yPred[0]],
+                x: [historical_dates[historical_dates.length - 1], xPred[0]],
+                y: [historical_closes[historical_closes.length - 1], yPred[0]],
                 mode: 'lines',
                 line: { dash: 'dot', width: 2, color: '#d62728' },
                 showlegend: false
@@ -225,50 +270,130 @@
                 y: yPred,
                 mode: 'lines+markers',
                 name: `${preds.model} Prediction`,
-                line: { dash: 'solid', width: 2, color: '#d62728' },
-                marker: { size: 5, color: '#d62728' }
+                line: { dash: 'solid', width: 3, color: '#d62728' }
+            });
+        }
+        
+        // Transaction Markers
+        if (transactions && transactions.length > 0) {
+            const buys = transactions.filter(t => t.type === 'BUY');
+            const sells = transactions.filter(t => t.type === 'SELL');
+            data.push({
+                x: buys.map(t => new Date(t.timestamp)),
+                y: buys.map(t => t.price_per_unit),
+                mode: 'markers',
+                name: 'Buys',
+                marker: { color: '#2ca02c', size: 10, symbol: 'triangle-up' }
+            });
+            data.push({
+                x: sells.map(t => new Date(t.timestamp)),
+                y: sells.map(t => t.price_per_unit),
+                mode: 'markers',
+                name: 'Sells',
+                marker: { color: '#d62728', size: 10, symbol: 'triangle-down' }
             });
         }
 
-        if (preds.baseline_predictions?.length > 0) {
-            const xBaseline = preds.baseline_predictions.map(p => new Date(p.timestamp));
-            const yBaseline = preds.baseline_predictions.map(p => p.predicted_close);
-
-            data.push({
-                x: [dates[dates.length - 1], xBaseline[0]],
-                y: [closes[closes.length - 1], yBaseline[0]],
-                mode: 'lines',
-                line: { dash: 'dot', width: 2, color: '#2ca02c' },
-                showlegend: false
-            });
-
-            data.push({
-                x: xBaseline,
-                y: yBaseline,
-                mode: 'lines+markers',
-                name: `Baseline Prediction`,
-                line: { dash: 'solid', width: 2, color: '#2ca02c' },
-                marker: { size: 5, color: '#2ca02c' }
-            });
-        }
+        const layout = {
+            title: `${document.getElementById('model').value} Forecast & Trades for ${document.getElementById('symbol').value}`,
+            xaxis: { rangeslider: { visible: false }, title: "Time" },
+            yaxis: { title: "Price", autorange: true },
+            legend: {
+                orientation: 'v',
+                x: 1.02,
+                y: 1,
+                xanchor: 'left',
+                yanchor: 'top',
+                bgcolor: 'rgba(255,255,255,0.8)',
+                bordercolor: '#ddd',
+                borderwidth: 1
+            },
+            hovermode: 'x unified'
+        };
+        
+        const config = {
+            responsive: true,
+            displayModeBar: true,
+            modeBarButtonsToAdd: ['toggleSpikelines'],
+            toImageButtonOptions: {
+                format: 'png',
+                filename: 'forecast_chart'
+            }
+        };
+        
+        Plotly.newPlot('price-chart', data, layout, config);
     }
 
-    Plotly.newPlot('chart', data, layout, {responsive: true});
-}
+    function drawPortfolioValueChart(portfolioHistory) {
+        if (!portfolioHistory || portfolioHistory.length === 0) return;
+        const trace = {
+            x: portfolioHistory.map(h => new Date(h.timestamp)),
+            y: portfolioHistory.map(h => h.value),
+            mode: 'lines',
+            name: 'Portfolio Value',
+            line: { color: '#1f77b4', width: 3 }
+        };
+        const layout = {
+            title: 'Portfolio Value Over Time',
+            xaxis: { title: 'Date' },
+            yaxis: { title: 'Total Value ($)' }
+        };
+        Plotly.newPlot('portfolio-value-chart', [trace], layout, {responsive: true});
+    }
+
+    function drawHoldingsPieChart(holdings) {
+        if (!holdings || Object.keys(holdings).length === 0) return;
+        const data = [{
+            labels: Object.keys(holdings),
+            values: Object.values(holdings),
+            type: 'pie',
+            textinfo: "label+percent",
+            insidetextorientation: "radial"
+        }];
+        const layout = {
+            title: 'Current Holdings Distribution'
+        };
+        Plotly.newPlot('holdings-pie-chart', data, layout, {responsive: true});
+    }
+
+    function formatPct(val) {
+        if (val === null || val === undefined) {
+            return 'N/A';
+        }
+        return `${(val * 100).toFixed(2)}%`;
+    }
+
+    function displayPerformanceMetrics(metrics) {
+        const metricsData = metrics || {}; // Ensure metrics is not null/undefined
+        document.getElementById('total-return').textContent = formatPct(metricsData.total_return);
+        document.getElementById('annualized-return').textContent = formatPct(metricsData.annualized_return);
+        document.getElementById('annualized-volatility').textContent = formatPct(metricsData.annualized_volatility);
+        document.getElementById('sharpe-ratio').textContent = (metricsData.sharpe_ratio !== null && metricsData.sharpe_ratio !== undefined) ? metricsData.sharpe_ratio.toFixed(2) : 'N/A';
+        document.getElementById('max-drawdown').textContent = formatPct(metricsData.max_drawdown);
+    }
 
     async function refresh() {
       const model = document.getElementById('model').value;
       const horizon = document.getElementById('horizon').value;
       const symbol = document.getElementById('symbol').value;
 
-      const candles = await fetchCandles(48 * 60);
       const preds = await fetchPredictions(model, horizon, symbol);
+      const portfolioData = await fetchPortfolioPerformance();
 
-      draw(candles, preds, model);
+      if (preds) {
+          drawPriceChart(preds, portfolioData ? portfolioData.transactions : []);
+      }
+      if (portfolioData) {
+          drawPortfolioValueChart(portfolioData.portfolio_history);
+          drawHoldingsPieChart(portfolioData.holdings);
+          displayPerformanceMetrics(portfolioData.metrics);
+      }
     }
 
-    document.getElementById('refresh').addEventListener('click', refresh);
-    refresh();
+    document.addEventListener('DOMContentLoaded', function() {
+        document.getElementById('refresh').addEventListener('click', refresh);
+        refresh(); // Initial load
+    });
   </script>
 </body>
 </html>

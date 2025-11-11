@@ -1,0 +1,40 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+tf-env/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Git
+.git/
+.gitignore
+
+# Test files
+test/
+*.log
+
+# Data that should be generated
+data/metrics.csv
+data/predictions.csv
+data/portfolio_*.csv
+data/portfolio_state.json
+.retrain_timestamp
+.new_rows_count
+
+# Documentation
+REPORT.md
+README.md

@@ -26,3 +26,17 @@ model/*.pkl
 
 # Logs
 *.log
+
+# Docker
+*.log
+.env
+
+# Generated data
+data/metrics.csv
+data/predictions.csv
+data/portfolio_*.csv
+data/portfolio_state.json
+data/*.csv
+!data/arima_hourly.csv
+!data/crypto_data.csv
+!data/lstm_daily.csv

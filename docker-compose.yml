@@ -1,0 +1,33 @@
+services:
+  # Finance forecasting application
+  app:
+    build: .
+    container_name: finance_app
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    environment:
+      - MONGO_URI=mongodb+srv://i222451:i222451@cluster0.z2egq.mongodb.net/
+      - DB_NAME=forecast
+      - FLASK_ENV=production
+    volumes:
+      - ./data:/app/data
+      - ./models:/app/models
+    networks:
+      - finance_network
+
+  # Redis for caching (optional)
+  redis:
+    image: redis:7-alpine
+    container_name: finance_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    networks:
+      - finance_network
+
+volumes: {}
+
+networks:
+  finance_network:
+    driver: bridge

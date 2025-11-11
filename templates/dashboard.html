@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Monitoring Dashboard</title>
+  <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background-color: #f0f2f5;
+      color: #333;
+      margin: 0;
+      padding: 20px;
+    }
+    header {
+      text-align: center;
+      margin-bottom: 40px;
+    }
+    h1, h2 {
+      color: #1d3557;
+    }
+    #dashboard-container {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      grid-gap: 40px;
+    }
+    .dashboard-card {
+      background-color: #fff;
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 20px;
+    }
+    th, td {
+      padding: 12px;
+      border: 1px solid #ddd;
+      text-align: left;
+    }
+    th {
+      background-color: #f9f9f9;
+    }
+    .alert-indicator {
+      display: inline-block;
+      width: 15px;
+      height: 15px;
+      border-radius: 50%;
+      margin-left: 10px;
+    }
+    .alert-ok {
+      background-color: #2ecc71;
+    }
+    .alert-danger {
+      background-color: #e74c3c;
+    }
+  </style>
+</head>
+<body>
+  <header><h1>Forecasting Model Monitoring Dashboard</h1></header>
+
+  <div id="dashboard-container">
+    <div class="dashboard-card" id="status-section">
+      <h2>System Status</h2>
+      <p><strong>Last Update:</strong> <span id="last-update">Loading...</span></p>
+      <p><strong>Next Scheduled Retraining:</strong> <span id="next-retraining">Loading...</span></p>
+    </div>
+
+    <div class="dashboard-card" id="alerts-section">
+        <h2>Alerts</h2>
+        <div id="alert-indicators"></div>
+    </div>
+
+    <div class="dashboard-card" id="charts-section" style="grid-column: 1 / -1;">
+      <h2>Metric Charts (Last 30 Days)</h2>
+      <div id="charts-container"></div>
+    </div>
+
+    <div class="dashboard-card" id="comparison-section">
+      <h2>Performance Comparison (Current vs. Previous Week)</h2>
+      <table id="comparison-table">
+        <thead><tr><th>Model</th><th>Horizon</th><th>Metric</th><th>Current Week</th><th>Previous Week</th><th>Change</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+
+    <div class="dashboard-card" id="versions-section">
+      <h2>Model Version History</h2>
+      <table id="versions-table">
+        <thead><tr><th>Model ID</th><th>Type</th><th>Timestamp</th><th>RMSE</th><th>MAPE</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+
+  <script>
+    document.addEventListener('DOMContentLoaded', function() {
+      const API_URL = '/api/dashboard';
+
+      async function fetchData(endpoint) {
+        const response = await fetch(`${API_URL}/${endpoint}`);
+        return response.json();
+      }
+
+      function renderStatus(data) {
+        document.getElementById('last-update').textContent = data.last_update;
+        document.getElementById('next-retraining').textContent = data.next_retraining;
+      }
+
+      function renderCharts(data) {
+        const container = document.getElementById('charts-container');
+        container.innerHTML = '';
+        for (const model in data) {
+          for (const horizon in data[model]) {
+            const chartId = `chart-${model}-${horizon}`;
+            const chartDiv = document.createElement('div');
+            chartDiv.id = chartId;
+            container.appendChild(chartDiv);
+
+            const traces = [];
+            for (const metric in data[model][horizon]) {
+              const history = data[model][horizon][metric];
+              if (history.length > 0) {
+                traces.push({
+                  x: history.map(h => h.timestamp),
+                  y: history.map(h => h[metric]),
+                  mode: 'lines+markers',
+                  name: metric.toUpperCase()
+                });
+              }
+            }
+
+            const layout = {
+              title: `${model.toUpperCase()} - ${horizon} Horizon`,
+              xaxis: { title: 'Time' },
+              yaxis: { title: 'Value' }
+            };
+
+            Plotly.newPlot(chartId, traces, layout);
+          }
+        }
+      }
+
+      function renderComparisonTable(data) {
+        const tbody = document.querySelector('#comparison-table tbody');
+        tbody.innerHTML = '';
+        data.forEach(row => {
+          const tr = document.createElement('tr');
+          tr.innerHTML = `
+            <td>${row.model.toUpperCase()}</td>
+            <td>${row.horizon}</td>
+            <td>${row.metric.toUpperCase()}</td>
+            <td>${row.current_week ? row.current_week.toFixed(4) : 'N/A'}</td>
+            <td>${row.previous_week ? row.previous_week.toFixed(4) : 'N/A'}</td>
+            <td>${row.change ? row.change.toFixed(4) : 'N/A'}</td>
+          `;
+          tbody.appendChild(tr);
+        });
+      }
+
+      function renderVersionsTable(data) {
+        const tbody = document.querySelector('#versions-table tbody');
+        tbody.innerHTML = '';
+        data.forEach(row => {
+          const tr = document.createElement('tr');
+          tr.innerHTML = `
+            <td>${row.model_id}</td>
+            <td>${row.model_type.toUpperCase()}</td>
+            <td>${new Date(row.timestamp).toLocaleString()}</td>
+            <td>${row.initial_metrics.rmse.toFixed(4)}</td>
+            <td>${row.initial_metrics.mape.toFixed(4)}</td>
+          `;
+          tbody.appendChild(tr);
+        });
+      }
+      
+      function renderAlerts(data) {
+          const container = document.getElementById('alert-indicators');
+          container.innerHTML = '';
+          let hasAlerts = false;
+          data.forEach(row => {
+              if (row.metric === 'mape' && row.current_week && row.current_week > 10) {
+                  hasAlerts = true;
+                  const alertDiv = document.createElement('div');
+                  alertDiv.innerHTML = `
+                      <p>
+                          <strong>${row.model.toUpperCase()} (${row.horizon}):</strong> 
+                          MAPE is ${row.current_week.toFixed(2)}%
+                          <span class="alert-indicator alert-danger"></span>
+                      </p>
+                  `;
+                  container.appendChild(alertDiv);
+              }
+          });
+          if (!hasAlerts) {
+              container.innerHTML = '<p>All models are performing within the acceptable error threshold. <span class="alert-indicator alert-ok"></span></p>';
+          }
+      }
+
+      async function loadDashboard() {
+        const [status, charts, comparison, versions] = await Promise.all([
+          fetchData('status'),
+          fetchData('metric_charts'),
+          fetchData('performance_comparison'),
+          fetchData('model_versions')
+        ]);
+
+        renderStatus(status);
+        renderCharts(charts);
+        renderComparisonTable(comparison);
+        renderVersionsTable(versions);
+        renderAlerts(comparison);
+      }
+
+      loadDashboard();
+    });
+  </script>
+</body>
+</html>
